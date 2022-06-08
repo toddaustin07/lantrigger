@@ -7,7 +7,7 @@ This can provides an analogous, yet 100% local, solution for cases where webCoRE
 
 This Edge driver can create any number of 'trigger' devices which each contain a button capability which is 'pushed' when a trigger message is received matching that device's configured name.  Each SmartThings device also includes a button on the device details screen to create additional LAN trigger devices.
 
-06/2022 UPDATE:  V2 of this driver is now available, which adds the ability to choose the device icon.
+***06/2022 UPDATE:  V2 of this driver is now available, which adds the ability to choose the device icon.***
 
 ## Pre-requisites
 
