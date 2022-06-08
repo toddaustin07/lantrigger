@@ -24,9 +24,9 @@ Once the driver has been installed to the hub, the user uses the mobile app to p
 ### Configuration
 
 In the mobile app, go tap on the new device and then tap the 3 vertical-dot menu in the upper right corner and select **Settings**.  Provide the following:
-- a unique name for the device - ***no special characters or blanks***
-- LAN address of the device or application - IP address *only* (e.g. '192.168.1.203')
-- LAN address of the forwarding bridge server - *must* include port number (e.g. '192.168.1.150:8088')
+- LAN Device Name - ***no special characters or blanks***
+- LAN App/Device Address - IP address *only* (e.g. '192.168.1.203')
+- Bridge Address - IP:port of the forwarding bridge server - *must* include port number (e.g. '192.168.1.150:8088')
 - Device icon (optional): choose Other, Switch, Plug, Bulb, or Remote
 
 ## LAN Device or Application Configuration
@@ -41,4 +41,4 @@ For example:
 POST http://192.168.1.150:8088/mydevice/trigger
 ```
 
-It is mandatory that the device name used in the endpoint string match that configured in the corresponding SmartThings device Settings, and must be followed by '/trigger'
+It is mandatory that the device name used in the endpoint string **match** the *LAN Device Name* configured in device Settings of the SmartThings LAN-Triggered Device.  Also, in the POST message, the device name must be followed by '/trigger' as shown above.
