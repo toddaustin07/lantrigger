@@ -33,7 +33,7 @@ In the mobile app, go tap on the new device and then tap the 3 vertical-dot menu
 
 The device or application on the LAN must be configured to send an HTTP **POST** to the bridge server with the following endpoint:
 ```
-/<device name>/trigger
+/<devicename>/trigger
 ```
 
 For example:
