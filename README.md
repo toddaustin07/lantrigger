@@ -17,7 +17,7 @@ This driver requires that a forwarding bridge server is running on the LAN.  Thi
 
 The driver is installed via channel invitation.  Link is:  https://api.smartthings.com/invitation-web/accept?id=cc2197b9-2dce-4d88-b6a1-2d198a0dfdef
 
-Enroll your hub and choose to install **LAN Device Trigger V2**.
+Enroll your hub and choose to install **LAN Device Trigger V2** from the list of available drivers.
 
 Once the driver has been installed to the hub, the user uses the mobile app to perform an 'Add device / Scan nearby' and a new device labeled "LAN-Triggered Device' is created and found in the 'No room assigned' room.
 
