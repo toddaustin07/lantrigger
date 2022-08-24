@@ -1,0 +1,58 @@
+name: lantrigger_remote.v1
+components:
+- id: main
+  capabilities:
+    - id: button
+      version: 1
+    - id: momentary
+      version: 1
+    - id: partyvoice23922.createanother
+      version: 1
+  categories:
+    - name: RemoteController
+metadata:
+  ocfDeviceType: x.com.st.d.remotecontroller
+preferences:
+  - title: "LAN Device Name"
+    name: devicename
+    description: "Identifying name of LAN device"
+    required: true
+    preferenceType: string
+    definition:
+      stringType: text
+      minLength: 3
+      maxLength: 36
+      default: "mydevice"
+  - title: "LAN App/Device Address"
+    name: deviceaddr
+    description: "IP address of app or device"
+    required: true
+    preferenceType: string
+    definition:
+      stringType: text
+      minLength: 7
+      maxLength: 15
+      default: "192.168.1.n"
+  - title: "Bridge Address"
+    name: bridgeaddr
+    description: "IP:Port addr of Edge Bridge"
+    required: true
+    preferenceType: string
+    definition:
+      stringType: text
+      minLength: 10
+      maxLength: 21
+      default: "192.168.1.n:8088"
+  - title: "Device Icon"
+    name: devicon
+    description: "Choose Icon"
+    required: true
+    preferenceType: enumeration
+    definition:
+      options:
+        other: "other"
+        switch: "switch"
+        plug: "plug"
+        light: "light"
+        remote: "remote"
+      default: remote

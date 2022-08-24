@@ -30,32 +30,14 @@ local log = require "log"
 local bridge = require "bridge"
 
 -- Custom Capabiities
-local capdefs = require "capabilitydefs"
-local cap_createdev = capabilities.build_cap_from_json_string(capdefs.createdev_cap)
-capabilities["partyvoice23922.createanother"] = cap_createdev
+local cap_createdev = capabilities["partyvoice23922.createanother"]
 
 -- Module variables
 local thisDriver = {}
 local initialized = false
+local device_init_counter = 0
 local lastinfochange = socket.gettime()
 local BRIDGESERVER_INITIALIZED = false
-
-
-local function disptable(table, tab, maxlevels, currlevel)
-
-	if not currlevel then; currlevel = 0; end
-  currlevel = currlevel + 1
-  for key, value in pairs(table) do
-    if type(key) ~= 'table' then
-      print (tab .. '  ' .. key, value)
-    else
-      print (tab .. '  ', key, value)
-    end
-    if (type(value) == 'table') and (currlevel < maxlevels) then
-      disptable(value, '  ' .. tab, maxlevels, currlevel)
-    end
-  end
-end
 
 
 function split(str, pat)
@@ -112,8 +94,6 @@ local function trigger_callback(devaddr, method, endpoint)
             log.error ('Unknown endpoint command:', cmd)
           end
         end
-      else
-        log.warn(string.format('Unexpected device IP (%s) for %s', devaddr, device.label))
       end
     end
     
@@ -133,7 +113,7 @@ local function create_device(driver)
   local MODEL = 'LAN-Triggered Device'
   local VEND_LABEL = 'LAN-Triggered Device'
   local ID = 'LANTriggered_' .. socket.gettime()
-  local PROFILE = 'lantrigger.v1'
+  local PROFILE = 'lantrigger_other.v1'
 
   log.info (string.format('Creating new device: label=<%s>, id=<%s>', VEND_LABEL, ID))
 
@@ -152,17 +132,70 @@ local function create_device(driver)
 end
 
 
+local function retry_register()
+
+  local device_list = thisDriver:get_devices()
+  local unregistered = 0
+  
+  for _, device in ipairs(device_list) do
+  
+    if device:get_field('registered') == false then
+    
+      if bridge.register(device.st_store.driver.id, device.preferences.bridgeaddr, device.preferences.deviceaddr) then
+        device:online()
+        device:set_field('registered', true)
+        log.info ('Registration with Bridge Server successful for', device.label)
+      else
+        log.error ('Registration with Bridge Server failed for', device.label)
+        unregistered = unregistered + 1
+      end
+    end
+  end
+  
+  if unregistered > 0 then
+    log.info('Scheduling registration retry')
+    thisDriver:call_with_delay(20, retry_register, 'registration-retry')
+  end
+end
+
+
 local function do_register(device)
 
   if bridge.register(device.st_store.driver.id, device.preferences.bridgeaddr, device.preferences.deviceaddr) then
     device:online()
+    device:set_field('registered', true)
     log.info ('Registration with Bridge Server successful')
   else
     log.error ('Registration with Bridge Server failed')
     device:offline()
+    device:set_field('registered', false)
   end
   
 end
+
+
+local function clear_registration(id, bridgeaddr, cleared_devaddr)
+
+  local device_list = thisDriver:get_devices()
+
+  -- see if there are any more devices still using this bridgeaddr & deviceaddr combo
+
+  local foundflag = false
+  for _, dev in ipairs(device_list) do
+    if dev.preferences.bridgeaddr == bridgeaddr and dev.preferences.deviceaddr == cleared_devaddr then
+      foundflag = true
+    end
+  end
+    
+  -- if none found, then delete the registration for this deviceaddr
+  if not foundflag then
+    if bridge.delete(id, bridgeaddr, cleared_devaddr) then
+      log.info (string.format('Bridge server %s registration deleted for device at: %s', bridgeaddr, cleared_devaddr))
+    end
+  end
+
+end
+
 
 -- CAPABILITY HANDLERS
 
@@ -188,7 +221,7 @@ end
 local function device_init(driver, device)
   
     log.debug(device.id .. ": " .. device.device_network_id .. "> INITIALIZING")
-  
+    
     if BRIDGESERVER_INITIALIZED == false then
       -- Startup Server
       bridge.start_bridge_server(driver, trigger_callback)
@@ -196,8 +229,16 @@ local function device_init(driver, device)
     end
     
     -- Register with server
-    do_register(device)
-      
+    device.thread:queue_event(do_register, device)
+    --do_register(device)
+        
+    initialized = true
+    device_init_counter = device_init_counter + 1
+    
+    if #driver:get_devices() == device_init_counter then
+      driver:call_with_delay(10, retry_register, 'registration-retry')
+    end
+    
     log.debug('Exiting device initialization')
 end
 
@@ -212,8 +253,6 @@ local function device_added (driver, device)
                             }
   device:emit_event(capabilities.button.supportedButtonValues(supported_values))
   
-  initialized = true
-      
 end
 
 
@@ -230,10 +269,12 @@ local function device_removed(driver, device)
   
   log.warn(device.id .. ": " .. device.device_network_id .. "> removed")
   
-  local device_list = driver:get_devices()
+  clear_registration(device.st_store.driver.id, device.preferences.bridgeaddr, device.preferences.deviceaddr)
   
+  local device_list = driver:get_devices()
   if #device_list == 0 then
-    log.warn ('All devices removed; driver disabled')
+    log.warn ('All devices removed')
+    initialized = false
   end
   
 end
@@ -246,36 +287,38 @@ local function handler_driverchanged(driver, device, event, args)
 end
 
 
+local function shutdown_handler(driver, event)
+
+  if event == 'shutdown' then
+    bridge.shutdown(driver)
+    log.warn('Bridge server shutdown')
+  end
+end
+
+
 local function handler_infochanged (driver, device, event, args)
 
   log.debug ('Info changed handler invoked')
-
-  local timenow = socket.gettime()
-  local timesincelast = timenow - lastinfochange
-
-  log.debug('Time since last info_changed:', timesincelast)
-  
-  lastinfochange = timenow
   
   -- Did preferences change?
   if args.old_st_store.preferences then
   
     if args.old_st_store.preferences.bridgeaddr ~= device.preferences.bridgeaddr then
       log.info ('Bridge address changed to: ', device.preferences.bridgeaddr)
+      do_register(device)
       
+    elseif args.old_st_store.preferences.deviceaddr ~= device.preferences.deviceaddr then 
+      log.info ('Device address changed to: ', device.preferences.deviceaddr)
+      clear_registration(device.st_store.driver.id, device.preferences.bridgeaddr, args.old_st_store.preferences.deviceaddr)
       do_register(device)
       
     elseif args.old_st_store.preferences.devicename ~= device.preferences.devicename then 
       log.info ('Device name changed to: ', device.preferences.devicename)
-    elseif args.old_st_store.preferences.deviceaddr ~= device.preferences.deviceaddr then 
-      log.info ('Device address changed to: ', device.preferences.deviceaddr)
---[[    
-    else
-      -- Assume driver is restarting - shutdown everything
-      log.debug ('****** DRIVER RESTART ASSUMED ******')
+    
+    elseif args.old_st_store.preferences.devicon ~= device.preferences.devicon then 
+      log.info ('Icon preference changed to: ', device.preferences.devicon)
+      device:try_update_metadata({profile = 'lantrigger_' .. device.preferences.devicon .. '.v1'})
       
-      bridge.shutdown(driver)
---]]      
     end
   end
 end
@@ -308,7 +351,7 @@ thisDriver = Driver("thisDriver", {
     doConfigure = device_doconfigure,
     removed = device_removed
   },
-  
+  driver_lifecycle = shutdown_handler,
   capability_handlers = {
     [cap_createdev.ID] = {
       [cap_createdev.commands.push.NAME] = handle_createdev,
@@ -319,7 +362,7 @@ thisDriver = Driver("thisDriver", {
   }
 })
 
-log.info ('LAN-Triggered Device Driver v1.0 Started')
+log.info ('LAN-Triggered Device Driver v2.2 Started')
 
 
 thisDriver:run()

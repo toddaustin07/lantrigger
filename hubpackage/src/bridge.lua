@@ -22,6 +22,7 @@
 
 local cosock = require "cosock" 
 local socket = require "cosock.socket"
+local Thread = require "st.thread"
 local log = require "log"
 
 local listen_ip = "0.0.0.0"
@@ -32,6 +33,7 @@ local channelID
 local server_ip
 local server_port
 local callback
+local server_thread
 local reglist = {}
 
 
@@ -150,13 +152,13 @@ local function register(id, bridgeaddr, deviceaddr)
     local foundflag = false
     
     for _, item in ipairs(reglist) do
-      if item == deviceaddr then
+      if item.bridge == bridgeaddr and item.dev == deviceaddr then
         foundflag = true
       end
     end
     
     if foundflag == true then
-      log.debug (string.format('%s already registered', deviceaddr))
+      log.debug (string.format('Device at %s already registered with bridge server at %s', deviceaddr, bridgeaddr))
       return true
     end
     
@@ -168,11 +170,11 @@ local function register(id, bridgeaddr, deviceaddr)
     --log.debug ('\tResponse data: ', response)
     
     if retcode == 200 then
-      table.insert(reglist, deviceaddr)
+      table.insert(reglist, {bridge=bridgeaddr, dev=deviceaddr})
       return true
     end
   else
-    log.warn ('Valid Bridge address not configured')
+    log.warn ('Valid Bridge server address not configured')
   end
 
   return false
@@ -187,7 +189,8 @@ local function watch_socket(_, sock)
 
   local client, accept_err = sock:accept()
 
-  log.debug("Accepted connection from", client:getpeername())
+  local ip, port, _ = client:getpeername()
+  log.debug(string.format("Accepted connection from %s:%s", ip, port))
 
   if accept_err ~= nil then
     log.info("Connection accept error: " .. accept_err)
@@ -195,69 +198,63 @@ local function watch_socket(_, sock)
     return
   end
 
-  client:settimeout(1)
+  cosock.spawn(function()
 
-  local line, err
+    client:settimeout(1)
 
-  local ip, _, _ = client:getpeername()
-  if ip ~= nil then
-    do -- Read first line
-      line, err = client:receive()
-      if err == nil then
-        log.debug ('Received:', line)
-      else
-        log.warn("Error on client receive: " .. err)
-        client:close()
-        return
-      end
+    local line, hline, err
+
+    -- Receive initial HTTP request line
+    line, err = client:receive()
+    
+    if err == nil then
+      log.debug ('Received:', line)
+    else
+      log.warn("Error on client receive: " .. err)
+      client:close()
+      return
     end
 
-    --[[
-
-    do -- Receive all headers until blank line is found
-      local line, err = client:receive()
-
-      if not err then
-        while line ~= "" do
-          log.debug ('Received:', line)
-
-          line, err  = client:receive()
-          if err ~= nil then
-            log.warn("Error on client receive: " .. err)
-            return
-          end
-        end
+    -- Receive header lines
+    hline, err = client:receive()
+    
+    if err == nil then
+      while (hline ~= "") and (err == nil) do
+        --log.debug ('\tHeader:', hline)
+        hline, err  = client:receive()
       end
+    end
+    if err then
+      log.warn("Error on header receive: ", err)
+      client:close()
+      return
     end
 
     -- Receive body here if needed (Future)
-  
-    --]]
     
-  else
-    log.warn("Could not get IP from getpeername()")
-  end
-  
-  
-  if line:find('POST', 1, plaintext) == 1 then
-   
-    OK_MSG = 'HTTP/1.1 200 OK\r\n\r\n'
-                
-    client:send(OK_MSG)
-   
-    -- received url format = 'POST /<device address>/<device message method>/<device message path> HTTP/1.1'
-    local devaddr, devmethod, devmsgpath = line:match('^POST /([%d%.:]+)/(%a+)(.*) ')
     
-    callback(devaddr, devmethod, devmsgpath)
+    if line:find('POST', 1, plaintext) == 1 then
+     
+      OK_MSG = 'HTTP/1.1 200 OK\r\n\r\n'
+                  
+      client:send(OK_MSG)
+     
+      -- received url format = 'POST /<device address>/<device message method>/<device message path> HTTP/1.1'
+      local devaddr, devmethod, devmsgpath = line:match('^POST /([%d%.:]+)/(%a+)(.*) ')
+      
+      callback(devaddr, devmethod, devmsgpath)
 
-  else
-    log.error ('Unexpected message received from Bridge:', line)
+    else
+      log.error ('Unexpected message received from Bridge:', line)
+      
+    end
     
-  end
-  
-  client:close()
+    client:close()
+    
+  end, "read socket task")
   
 end
+
 
 local function start_bridge_server(driver, triggerfunc)
 
@@ -268,18 +265,24 @@ local function start_bridge_server(driver, triggerfunc)
   
   callback = triggerfunc
 
-  channelID = driver:register_channel_handler(serversock, watch_socket, 'server')
+  if not server_thread then
+    server_thread = Thread.Thread(driver, 'server thread')
+  end
   
+  server_thread:register_socket(serversock, watch_socket, 'server handler')
+
 end
 
 
 local function shutdown(driver)
 
   log.debug ('Shutting down Bridge server')
-  if channelID then
-    driver:unregister_channel_handler(channelID)
+  
+  if server_thread then
+    server_thread:unregister_socket(serversock, watch_socket)
   end
-  log.debug ('\tChannel unregistered') 
+  
+  log.debug ('\tServer socket handler unregistered') 
   if serversock then
     serversock:close()
   end
@@ -290,17 +293,29 @@ end
 
 local function delete(id, bridgeaddr, deviceaddr)
   
-  local endpoint = '/api/register?devaddr=' .. tostring(deviceaddr) .. '&edgeid=' .. id ..'&hubaddr=' .. server_ip .. ':' .. tostring(server_port)
-  local retcode, response = issue_request('DELETE', ip, port, endpoint)
+  local ip, port = validate_address(bridgeaddr)
   
-  if retcode == 200 then
-    table.remove(reglist, deviceaddr)
-    return true
+  if ip then
+  
+    local endpoint = '/api/register?devaddr=' .. tostring(deviceaddr) .. '&edgeid=' .. id ..'&hubaddr=' .. server_ip .. ':' .. tostring(server_port)
+    local retcode, response = issue_request('DELETE', ip, port, endpoint)
     
+    if retcode == 200 then
+      for i, item in ipairs(reglist) do
+        if item.bridge == bridgeaddr and item.dev == deviceaddr then
+          table.remove(reglist, i)
+        end
+      end
+      
+      return true
+      
+    else
+      log.error ('Failed to delete registration')
+    end
   else
-    log.error ('Failed to delete registration')
+    log.warn('Cannot unregister: invalid bridge server address')
   end
-  
+
   return false
   
 end

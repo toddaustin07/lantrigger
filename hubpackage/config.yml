@@ -1,5 +1,5 @@
-name: 'LAN Device Trigger'
-packageKey: 'lantriggerv1'
+name: 'LAN Device Trigger V2b'
+packageKey: 'lantriggerv2b'
 permissions:
     lan: {}
     discovery: {}
