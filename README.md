@@ -1,4 +1,4 @@
-# lantrigger: A SmartThings Edge Driver
+# LAN Trigger: A SmartThings Edge Driver
 
 ## Description
 This SmartThings Edge driver is designed to work with *edgebridge* (https://github.com/toddaustin07/edgebridge) and provides a mechanism for LAN-based devices and applications to send a generic 'trigger' to SmartThings which can then be used in Automation routines and Rules as an IF condition.  
