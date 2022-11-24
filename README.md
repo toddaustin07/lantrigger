@@ -9,7 +9,7 @@ This Edge driver can create any number of 'trigger' devices which each contain a
 
 ***06/2022 UPDATE:  V2 of this driver is now available, which adds the ability to choose the device icon.***
 
-***11/2022 UPDATE:  An alternate version of this driver is now available for testing that incorporates up to 19 triggers in one single device.  It is currently available on my [test channel](https://bestow-regional.api.smartthings.com/invite/Q1jP7BqnNNlL) and is called **LAN Trigger Multi V1.0** .
+***11/2022 UPDATE:  An alternate version of this driver is now available for testing that incorporates up to 19 triggers in one single device.***  It is currently available on my [test channel](https://bestow-regional.api.smartthings.com/invite/Q1jP7BqnNNlL) and is called **LAN Trigger Multi V1.0** .
 
 ## Pre-requisites
 
